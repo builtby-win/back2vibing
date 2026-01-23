@@ -5,7 +5,7 @@ cask "back2vibing" do
   url "https://github.com/builtby-win/back2vibing/releases/download/v#{version}/back2vibing_#{version}_aarch64.dmg",
       verified: "github.com/builtby-win/back2vibing/"
   name "Back2Vibing"
-  desc "Desktop companion that keeps you focused while long-running AI coding tasks finish"
+  desc "Keeps you focused while long-running AI coding tasks finish"
   homepage "https://builtby.win/"
 
   livecheck do
