@@ -13,8 +13,6 @@ cask "back2vibing" do
   end
 
   auto_updates true
-  depends_on macos: ">= :high_sierra"
-  arch arm: "aarch64", intel: "x64"
 
   app "Back2Vibing.app"
 
