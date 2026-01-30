@@ -12,7 +12,7 @@ jobs:
       - name: Checkout tap repository
         uses: actions/checkout@v4
         with:
-          repository: builtby-win/back2vibing-releases
+          repository: builtby-win/back2vibing
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Get latest release
@@ -21,17 +21,17 @@ jobs:
           # Always query the latest release from the API, not from the event
           LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/builtby-win/back2vibing/releases/latest")
-          
+
           # Extract version and remove 'v' prefix
           VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name')
           VERSION=${VERSION#v}
-          
+
           # Check if we got a valid release
           if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
             echo "No releases found, skipping update"
             exit 0
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Found latest release: v$VERSION"
 
