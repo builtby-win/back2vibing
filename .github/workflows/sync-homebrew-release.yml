@@ -1,0 +1,89 @@
+name: Sync Homebrew Release
+
+on:
+  release:
+    types: [published, unpublished, deleted, edited]
+  workflow_dispatch:
+
+jobs:
+  update-cask:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: builtby-win/back2vibing-releases
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Get latest release
+        id: release
+        run: |
+          # Always query the latest release from the API, not from the event
+          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/builtby-win/back2vibing/releases/latest")
+          
+          # Extract version and remove 'v' prefix
+          VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name')
+          VERSION=${VERSION#v}
+          
+          # Check if we got a valid release
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "No releases found, skipping update"
+            exit 0
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Found latest release: v$VERSION"
+
+      - name: Download and calculate SHA256
+        id: dmg
+        if: steps.release.outputs.version != ''
+        run: |
+          DMG_URL="https://github.com/builtby-win/back2vibing/releases/download/v${{ steps.release.outputs.version }}/back2vibing_${{ steps.release.outputs.version }}_aarch64.dmg"
+          echo "Downloading DMG from: $DMG_URL"
+          curl -L -o back2vibing.dmg "$DMG_URL"
+          SHA256=$(shasum -a 256 back2vibing.dmg | awk '{print $1}')
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+          rm back2vibing.dmg
+
+      - name: Update Cask file
+        if: steps.release.outputs.version != ''
+        run: |
+          cat > Casks/back2vibing.rb << 'EOF'
+          cask "back2vibing" do
+            version "${{ steps.release.outputs.version }}"
+            sha256 "${{ steps.dmg.outputs.sha256 }}"
+
+            url "https://github.com/builtby-win/back2vibing/releases/download/v#{version}/back2vibing_#{version}_aarch64.dmg",
+                verified: "github.com/builtby-win/back2vibing/"
+            name "Back2Vibing"
+            desc "Keeps you focused while long-running AI coding tasks finish"
+            homepage "https://back2vibing.builtby.win/"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            auto_updates true
+
+            app "Back2Vibing.app"
+
+            zap trash: [
+              "~/Library/Application Support/back2vibing",
+              "~/Library/Caches/back2vibing",
+              "~/Library/Preferences/com.builtby-win.back2vibing.plist",
+              "~/Library/WebKit/com.builtby-win.back2vibing",
+            ]
+          end
+          EOF
+
+      - name: Commit and push
+        if: steps.release.outputs.version != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/back2vibing.rb
+          git commit -m "chore: Update back2vibing to v${{ steps.release.outputs.version }}"
+          git push
