@@ -3,6 +3,7 @@ name: Sync Homebrew Release
 on:
   release:
     types: [published, unpublished, deleted, edited]
+  workflow_dispatch:
 
 jobs:
   update-cask:
