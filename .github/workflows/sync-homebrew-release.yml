@@ -2,8 +2,14 @@ name: Sync Homebrew Release
 
 on:
   release:
-    types: [published, unpublished, deleted, edited]
+    types: [published]
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel to sync"
+        type: choice
+        options: [stable, nightly]
+        default: stable
 
 jobs:
   update-cask:
@@ -16,31 +22,112 @@ jobs:
           ref: main
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Get latest release
+      - name: Resolve release to sync
         id: release
         run: |
-          # Always query the latest release from the API, not from the event
-          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/builtby-win/back2vibing/releases/latest")
+          set -euo pipefail
 
-          # Extract version and remove 'v' prefix
-          VERSION=$(echo "$LATEST_RELEASE" | jq -r '.tag_name')
-          VERSION=${VERSION#v}
+          OWNER="builtby-win"
+          REPO="back2vibing"
+          API="https://api.github.com/repos/$OWNER/$REPO"
+          CHANNEL="stable"
+          NIGHTLY_JSON_URL="https://github.com/$OWNER/$REPO/releases/download/nightly/latest-nightly.json"
 
-          # Check if we got a valid release
-          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-            echo "No releases found, skipping update"
+          latest_stable_tag() {
+            curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$API/releases/latest" | jq -r '.tag_name'
+          }
+
+          nightly_version_from_pointer() {
+            curl -sL "$NIGHTLY_JSON_URL" | jq -r '.version'
+          }
+
+          is_prerelease_tag() {
+            local tag="$1"
+            local info
+            info=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$API/releases/tags/$tag")
+            echo "$info" | jq -r '.prerelease'
+          }
+
+          if [ "${{ github.event_name }}" = "release" ]; then
+            if [ "${{ github.event.action }}" != "published" ]; then
+              echo "Release action '${{ github.event.action }}' does not update casks"
+              exit 0
+            fi
+
+            PRERELEASE=$(jq -r '.release.prerelease' "$GITHUB_EVENT_PATH")
+            EVENT_TAG=$(jq -r '.release.tag_name' "$GITHUB_EVENT_PATH")
+
+            if [ "$PRERELEASE" = "true" ]; then
+              CHANNEL="nightly"
+
+              if [ "$EVENT_TAG" = "nightly" ]; then
+                echo "Nightly pointer release published; skipping cask update"
+                exit 0
+              fi
+
+              TAG="$EVENT_TAG"
+            else
+              TAG="$EVENT_TAG"
+            fi
+          else
+            if [ "${{ inputs.channel }}" = "nightly" ]; then
+              CHANNEL="nightly"
+              VERSION=$(nightly_version_from_pointer)
+
+              if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+                echo "No nightly version found at $NIGHTLY_JSON_URL, skipping update"
+                exit 0
+              fi
+
+              TAG="v$VERSION"
+
+              if [ "$(is_prerelease_tag "$TAG")" != "true" ]; then
+                echo "Latest nightly pointer references non-prerelease ($TAG), skipping update"
+                exit 0
+              fi
+            else
+              TAG=$(latest_stable_tag)
+            fi
+          fi
+
+          if [ -z "${TAG:-}" ] || [ "$TAG" = "null" ]; then
+            echo "No releases found for channel '$CHANNEL', skipping update"
             exit 0
           fi
 
+          VERSION=${TAG#v}
+
+          if [ "$CHANNEL" = "nightly" ]; then
+            CASK_NAME="back2vibing-nightly"
+            CASK_FILE="Casks/back2vibing-nightly.rb"
+            LIVE_STRATEGY="github_prerelease"
+            DISPLAY_NAME="Back2Vibing Nightly"
+            DESC="Nightly builds for Back2Vibing"
+            CONFLICTS="back2vibing"
+          else
+            CASK_NAME="back2vibing"
+            CASK_FILE="Casks/back2vibing.rb"
+            LIVE_STRATEGY="github_latest"
+            DISPLAY_NAME="Back2Vibing"
+            DESC="Keeps you focused while long-running AI coding tasks finish"
+            CONFLICTS="back2vibing-nightly"
+          fi
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Found latest release: v$VERSION"
+          echo "cask_name=$CASK_NAME" >> $GITHUB_OUTPUT
+          echo "cask_file=$CASK_FILE" >> $GITHUB_OUTPUT
+          echo "livecheck=$LIVE_STRATEGY" >> $GITHUB_OUTPUT
+          echo "display_name=$DISPLAY_NAME" >> $GITHUB_OUTPUT
+          echo "desc=$DESC" >> $GITHUB_OUTPUT
+          echo "conflicts=$CONFLICTS" >> $GITHUB_OUTPUT
+          echo "Found $CHANNEL release: v$VERSION"
 
       - name: Download and calculate SHA256
         id: dmg
         if: steps.release.outputs.version != ''
         run: |
-          DMG_URL="https://github.com/builtby-win/back2vibing/releases/download/v${{ steps.release.outputs.version }}/back2vibing_${{ steps.release.outputs.version }}_aarch64.dmg"
+          DMG_URL="https://github.com/builtby-win/back2vibing/releases/download/${{ steps.release.outputs.tag }}/back2vibing_${{ steps.release.outputs.version }}_aarch64.dmg"
           echo "Downloading DMG from: $DMG_URL"
           curl -L -o back2vibing.dmg "$DMG_URL"
           SHA256=$(shasum -a 256 back2vibing.dmg | awk '{print $1}')
@@ -51,23 +138,37 @@ jobs:
       - name: Update Cask file
         if: steps.release.outputs.version != ''
         run: |
-          cat > Casks/back2vibing.rb << 'EOF'
-          cask "back2vibing" do
-            version "${{ steps.release.outputs.version }}"
-            sha256 "${{ steps.dmg.outputs.sha256 }}"
+          set -euo pipefail
 
-            url "https://github.com/builtby-win/back2vibing/releases/download/v#{version}/back2vibing_#{version}_aarch64.dmg",
+          CASK_NAME="${{ steps.release.outputs.cask_name }}"
+          CASK_FILE="${{ steps.release.outputs.cask_file }}"
+          TAG="${{ steps.release.outputs.tag }}"
+          VERSION="${{ steps.release.outputs.version }}"
+          SHA256="${{ steps.dmg.outputs.sha256 }}"
+          LIVE_STRATEGY="${{ steps.release.outputs.livecheck }}"
+          DISPLAY_NAME="${{ steps.release.outputs.display_name }}"
+          DESC="${{ steps.release.outputs.desc }}"
+          CONFLICTS="${{ steps.release.outputs.conflicts }}"
+
+          cat > "$CASK_FILE" << EOF
+          cask "$CASK_NAME" do
+            version "$VERSION"
+            sha256 "$SHA256"
+
+            url "https://github.com/builtby-win/back2vibing/releases/download/$TAG/back2vibing_#{version}_aarch64.dmg",
                 verified: "github.com/builtby-win/back2vibing/"
-            name "Back2Vibing"
-            desc "Keeps you focused while long-running AI coding tasks finish"
+            name "$DISPLAY_NAME"
+            desc "$DESC"
             homepage "https://back2vibing.builtby.win/"
 
             livecheck do
               url :url
-              strategy :github_latest
+              strategy :$LIVE_STRATEGY
             end
 
             auto_updates true
+
+            conflicts_with cask: "$CONFLICTS"
 
             app "Back2Vibing.app"
 
@@ -85,6 +186,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/back2vibing.rb
-          git commit -m "chore: Update back2vibing to v${{ steps.release.outputs.version }}"
+          git add "${{ steps.release.outputs.cask_file }}"
+          git commit -m "chore: Update ${{ steps.release.outputs.cask_name }} to v${{ steps.release.outputs.version }}"
           git push
