@@ -17,6 +17,15 @@ Or install the latest release directly:
 brew install --cask back2vibing --github-token <your-github-token>
 ```
 
+### Install Nightly Build
+
+Get the latest development version with the newest features:
+
+```bash
+brew tap builtby-win/back2vibing-nightly https://github.com/builtby-win/back2vibing-nightly
+brew install back2vibing
+```
+
 ## Features
 
 ### 🎯 Session Dock - Mission Control for Your Agents
