@@ -22,8 +22,8 @@ brew install --cask back2vibing --github-token <your-github-token>
 Get the latest development version with the newest features:
 
 ```bash
-brew tap builtby-win/back2vibing https://github.com/builtby-win/back2vibing --branch nightly
-brew install back2vibing@nightly
+brew tap builtby-win/back2vibing https://github.com/builtby-win/back2vibing
+brew install back2vibing-nightly
 ```
 
 ## Features
