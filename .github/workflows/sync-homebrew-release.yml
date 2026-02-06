@@ -150,12 +150,18 @@ jobs:
           DESC="${{ steps.release.outputs.desc }}"
           CONFLICTS="${{ steps.release.outputs.conflicts }}"
 
+          # For nightly casks, always use the nightly tag in the URL
+          DOWNLOAD_TAG="$TAG"
+          if [ "$CASK_NAME" = "back2vibing-nightly" ]; then
+            DOWNLOAD_TAG="nightly"
+          fi
+
           cat > "$CASK_FILE" << EOF
           cask "$CASK_NAME" do
             version "$VERSION"
             sha256 "$SHA256"
 
-            url "https://github.com/builtby-win/back2vibing/releases/download/$TAG/back2vibing_#{version}_aarch64.dmg",
+            url "https://github.com/builtby-win/back2vibing/releases/download/$DOWNLOAD_TAG/back2vibing_#{version}_aarch64.dmg",
                 verified: "github.com/builtby-win/back2vibing/"
             name "$DISPLAY_NAME"
             desc "$DESC"
