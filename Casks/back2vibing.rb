@@ -1,8 +1,8 @@
 cask "back2vibing" do
-  version "0.8.2"
-  sha256 "f5ed0e48541db241097e6993e5c4043969d24c32df61521f5b6089322e8a8e58"
+  version "0.8.3"
+  sha256 "79a4bc8366e21ae9c5b50d31d96523c60231d0adb96948b0a129aa968defce82"
 
-  url "https://github.com/builtby-win/back2vibing/releases/download/v0.8.2/back2vibing_#{version}_aarch64.dmg",
+  url "https://github.com/builtby-win/back2vibing/releases/download/v0.8.3/back2vibing_#{version}_aarch64.dmg",
       verified: "github.com/builtby-win/back2vibing/"
   name "Back2Vibing"
   desc "Keeps you focused while long-running AI coding tasks finish"
