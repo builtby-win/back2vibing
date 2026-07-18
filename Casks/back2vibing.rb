@@ -1,6 +1,6 @@
 cask "back2vibing" do
   version "0.8.11"
-  sha256 "baa9030233baac35a56b30833199a6d85ee0339a7b662deb76e925846a026d2e"
+  sha256 "c10ef074ce7fb1dd9dcb44ff2f1b90c4f79e442fbe76e12b2185963f4e369d45"
 
   url "https://github.com/builtby-win/back2vibing/releases/download/v0.8.11/back2vibing_#{version}_aarch64.dmg",
       verified: "github.com/builtby-win/back2vibing/"
