@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "manifest_url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/hooks-manifest.json",
+  "hooks": {
+    "b2v-pi.ts": {
+      "description": "Oh My Pi / Pi Agent extension hook",
+      "agent_ids": [
+        "oh-my-pi",
+        "pi-agent"
+      ],
+      "versions": [
+        {
+          "hook_version": 1,
+          "sha256": "8693873222e6a55df62e647bac1e3e1347aa517a6bb4a7d6ab311240aaef9a08",
+          "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-pi.ts",
+          "min_app_version": "0.8.0",
+          "min_agent_version": null,
+          "max_agent_version": null
+        }
+      ]
+    },
+    "b2v-hooks.ts": {
+      "description": "OpenCode plugin hook",
+      "agent_ids": [
+        "opencode"
+      ],
+      "versions": [
+        {
+          "hook_version": 1,
+          "sha256": "5249a304e974a1721dbbc9f28bdf852d501067c8c3f0352a98eaade0521cfac6",
+          "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-hooks.ts",
+          "min_app_version": "0.8.0",
+          "min_agent_version": null,
+          "max_agent_version": null
+        }
+      ]
+    },
+    "b2v-agent-event.sh": {
+      "description": "Shared shell transport for Claude, Codex, Gemini, Kiro, etc.",
+      "agent_ids": [
+        "anthropic-claude-code",
+        "openai-codex",
+        "gemini-cli",
+        "kiro",
+        "jcode"
+      ],
+      "versions": [
+        {
+          "hook_version": 1,
+          "sha256": "db99ed6bb20fd831c13acfce8a077f3ed21d29627e8a7b46eb1b22078c5bcd16",
+          "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-agent-event.sh",
+          "min_app_version": "0.8.0",
+          "min_agent_version": null,
+          "max_agent_version": null
+        }
+      ]
+    },
+    "b2v-amp.ts": {
+      "description": "Sourcegraph Amp hook",
+      "agent_ids": [
+        "sourcegraph-amp"
+      ],
+      "versions": [
+        {
+          "hook_version": 1,
+          "sha256": "fb4e5fd8a88ff30c1811cd47591abbd86d38d944cea923d5a5ff8f352bcd842d",
+          "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-amp.ts",
+          "min_app_version": "0.8.0",
+          "min_agent_version": null,
+          "max_agent_version": null
+        }
+      ]
+    },
+    "b2v_hooks.py": {
+      "description": "Hermes Python hook",
+      "agent_ids": [
+        "hermes"
+      ],
+      "versions": [
+        {
+          "hook_version": 1,
+          "sha256": "a8ea83a0563d0d01e0259c43b017416631f8fcf199295d69e47cb11efabd5da6",
+          "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v_hooks.py",
+          "min_app_version": "0.8.0",
+          "min_agent_version": null,
+          "max_agent_version": null
+        }
+      ]
+    }
+  }
+}
