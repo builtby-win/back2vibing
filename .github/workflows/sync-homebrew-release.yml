@@ -2,7 +2,7 @@ name: Sync Homebrew Release
 
 on:
   release:
-    types: [published]
+    types: [published, released]
   workflow_dispatch:
     inputs:
       channel:
@@ -49,10 +49,6 @@ jobs:
           }
 
           if [ "${{ github.event_name }}" = "release" ]; then
-            if [ "${{ github.event.action }}" != "published" ]; then
-              echo "Release action '${{ github.event.action }}' does not update casks"
-              exit 0
-            fi
 
             PRERELEASE=$(jq -r '.release.prerelease' "$GITHUB_EVENT_PATH")
             EVENT_TAG=$(jq -r '.release.tag_name' "$GITHUB_EVENT_PATH")
