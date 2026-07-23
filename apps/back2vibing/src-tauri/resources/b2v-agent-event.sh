@@ -164,9 +164,19 @@ resolve_b2v_cli() {
     return 0
   fi
 
+  local cache_file="${TMPDIR:-/tmp}/b2v-cli-path.cache"
+  if [ -f "$cache_file" ]; then
+    cli_path="$(tr -d '\r\n' < "$cache_file")"
+    if [ -n "$cli_path" ] && [ -x "$cli_path" ]; then
+      printf '%s\n' "$cli_path"
+      return 0
+    fi
+  fi
+
   if [ -f "$B2V_CONFIG_DIR/cli.path" ]; then
     cli_path="$(tr -d '\r\n' < "$B2V_CONFIG_DIR/cli.path")"
     if [ -n "$cli_path" ] && [ -x "$cli_path" ]; then
+      printf '%s\n' "$cli_path" > "$cache_file" 2>/dev/null || true
       printf '%s\n' "$cli_path"
       return 0
     fi
@@ -178,18 +188,23 @@ resolve_b2v_cli() {
     "/Applications/back2vibing.app/Contents/MacOS/b2v" \
     "$HOME/Applications/back2vibing.app/Contents/MacOS/b2v"; do
     if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate" > "$cache_file" 2>/dev/null || true
       printf '%s\n' "$candidate"
       return 0
     fi
   done
 
   if command -v b2v >/dev/null 2>&1; then
-    command -v b2v
+    local resolved_b2v
+    resolved_b2v="$(command -v b2v)"
+    printf '%s\n' "$resolved_b2v" > "$cache_file" 2>/dev/null || true
+    printf '%s\n' "$resolved_b2v"
     return 0
   fi
 
   for candidate in "$PWD/target/debug/b2v"; do
     if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate" > "$cache_file" 2>/dev/null || true
       printf '%s\n' "$candidate"
       return 0
     fi
