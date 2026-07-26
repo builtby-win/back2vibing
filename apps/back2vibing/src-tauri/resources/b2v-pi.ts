@@ -448,6 +448,46 @@ const emit = async (eventName: string, event: Record<string, unknown>, ctx: Exte
   }
 }
 
+export const emitNonBlocking = (
+  eventName: string,
+  event: Record<string, unknown>,
+  ctx: ExtensionContext,
+  scriptPath = AGENT_EVENT_SCRIPT,
+): void => {
+  try {
+    if (isBack2VibingDisabled() || !scriptPath || scriptPath.startsWith('__B2V_')) return
+
+    const rawEvent = buildPiRawEvent(eventName, event, ctx)
+    let done = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const child = spawn(scriptPath, [AGENT_ID, '--event', eventName], {
+      cwd: ctx.cwd,
+      env: process.env,
+      stdio: ['pipe', 'ignore', 'ignore'],
+    })
+    const finish = () => {
+      if (done) return
+      done = true
+      if (timeout) clearTimeout(timeout)
+    }
+
+    timeout = setTimeout(() => {
+      child.kill('SIGKILL')
+      finish()
+    }, AGENT_EVENT_TIMEOUT_MS)
+    child.on('error', finish)
+    child.on('close', finish)
+    child.stdin?.on('error', finish)
+    if (!child.stdin) {
+      finish()
+      return
+    }
+    child.stdin.end(JSON.stringify(rawEvent))
+  } catch {
+    // Never throw from event handlers — omp may stop calling this extension
+  }
+}
+
 export const emitBlocking = async (
   eventName: string,
   event: Record<string, unknown>,
@@ -713,7 +753,7 @@ const runNativePiAskFallback = async (
   if (signal?.aborted) return cancelPiAsk(ctx, 'Ask input was cancelled')
   const askDialog = ctx.ui.askDialog
   if (!askDialog)
-    return cancelPiAsk(ctx, 'Back2Vibing bridge failed and the native ask dialog is unavailable')
+    return cancelPiAsk(ctx, 'back2vibing bridge failed and the native ask dialog is unavailable')
   const result = await askDialog(questions, { signal })
   if (!result) return cancelPiAsk(ctx, 'Ask tool was cancelled by the user')
   if (result.kind === 'chat') {
@@ -923,21 +963,21 @@ export const gatePiToolCall = async (
   }
   if (reply.decision !== 'deny') return undefined
   const reason = typeof reply.reason === 'string' && reply.reason.trim() ? `: ${reply.reason}` : ''
-  return { block: true, reason: `Denied via Back2Vibing${reason}` }
+  return { block: true, reason: `Denied via back2vibing${reason}` }
 }
 
 export default function back2vibing(pi: ExtensionAPI) {
   const hasAskBridge = registerPiAskBridge(pi)
   let planApprovalPending = false
   let activeContext: ExtensionContext | undefined
-  pi.on('session_start', async (event: PiSessionEvent, ctx: ExtensionContext) => {
+  pi.on('session_start', (event: PiSessionEvent, ctx: ExtensionContext) => {
     activeContext = ctx
-    await emit('session_start', event as Record<string, unknown>, ctx)
+    emitNonBlocking('session_start', event as Record<string, unknown>, ctx)
   })
 
-  pi.on('agent_start', async (event: PiAgentEvent, ctx: ExtensionContext) => {
+  pi.on('agent_start', (event: PiAgentEvent, ctx: ExtensionContext) => {
     activeContext = ctx
-    await emit('agent_start', event as Record<string, unknown>, ctx)
+    emitNonBlocking('agent_start', event as Record<string, unknown>, ctx)
   })
 
   pi.on('tool_result', async (event: PiToolResultEvent) => {
@@ -959,15 +999,15 @@ export default function back2vibing(pi: ExtensionAPI) {
     }
 
     if (isTerminalAgentEnd(event)) {
-      await emit('agent_end', event, ctx)
+      emitNonBlocking('agent_end', event, ctx)
     }
   })
 
   // Turn-level lifecycle: fires once per LLM response + tool calls cycle
-  pi.on('turn_start', async (event: PiTurnEvent, ctx: ExtensionContext) => {
+  pi.on('turn_start', (event: PiTurnEvent, ctx: ExtensionContext) => {
     planApprovalPending = false
     activeContext = ctx
-    await emit('before_model', event as Record<string, unknown>, ctx)
+    emitNonBlocking('before_model', event as Record<string, unknown>, ctx)
   })
 
   pi.on(
@@ -987,7 +1027,7 @@ export default function back2vibing(pi: ExtensionAPI) {
     return await gatePiToolCall(event, ctx)
   })
 
-  pi.on('session_shutdown', async (event: Record<string, unknown>, ctx: ExtensionContext) => {
-    await emit('session_shutdown', event, ctx)
+  pi.on('session_shutdown', (event: Record<string, unknown>, ctx: ExtensionContext) => {
+    emitNonBlocking('session_shutdown', event, ctx)
   })
 }
