@@ -273,6 +273,7 @@ type ExtensionContext = {
   readonly sessionManager?: {
     readonly getSessionId?: () => string | undefined
     readonly getSessionFile?: () => string | undefined
+    readonly getSessionName?: () => string | undefined
   }
 }
 
@@ -376,6 +377,14 @@ const sessionScope = (ctx: ExtensionContext) => {
   return subagentSessionInfo(sessionFile)
 }
 
+// The agent owns its title, so hand it to back2vibing directly instead of making
+// it reverse-engineer the session file. `getSessionName` already resolves
+// precedence — an auto-generated title never wins over an explicit `/name`.
+const sessionTitle = (ctx: ExtensionContext) => {
+  const name = ctx.sessionManager?.getSessionName?.()
+  return typeof name === 'string' && name.trim() ? name.trim() : undefined
+}
+
 export const buildPiRawEvent = (
   eventName: string,
   event: Record<string, unknown>,
@@ -383,12 +392,14 @@ export const buildPiRawEvent = (
 ) => {
   const scope = sessionScope(ctx)
   const bundleId = expectedBundleId()
+  const title = sessionTitle(ctx)
 
   return {
     ...event,
     event: eventName,
     session_id: eventSessionId(event) || sessionHash(ctx),
     cwd: ctx.cwd,
+    ...(title ? { session_title: title } : {}),
     ...(bundleId ? { expected_bundle_id: bundleId } : {}),
     ...(scope
       ? {

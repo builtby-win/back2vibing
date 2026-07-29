@@ -11,7 +11,7 @@
       "versions": [
         {
           "hook_version": 1,
-          "sha256": "a6ad3c6d89e69586bcd1c9e9a21cda28b3ed396322c1e8baacdbe75f32ce41dc",
+          "sha256": "6c89dda52e355fda0d1a5cc6991f2f044c7cc68b92a039e64d39632c9e379cdd",
           "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-pi.ts",
           "min_app_version": "0.8.0",
           "min_agent_version": null,
@@ -27,7 +27,7 @@
       "versions": [
         {
           "hook_version": 1,
-          "sha256": "5249a304e974a1721dbbc9f28bdf852d501067c8c3f0352a98eaade0521cfac6",
+          "sha256": "291f5acdd5d6b39df15251aad992f7bed80bf3bbc1fa4ba133b52add72cd2cff",
           "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-hooks.ts",
           "min_app_version": "0.8.0",
           "min_agent_version": null,

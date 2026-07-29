@@ -112,6 +112,10 @@ const __testHandle = {
     event: Record<string, unknown>,
     sessionId?: string,
   ) => shouldSkipSubagentHooks(eventType, event, sessionId),
+  rememberSessionTitle: (event: Record<string, unknown>, sessionHash?: string) =>
+    rememberSessionTitle(event, sessionHash),
+  withSessionTitle: (event: Record<string, unknown>) => withSessionTitle(event),
+  sessionTitlePushEvent: (sessionHash: string) => sessionTitlePushEvent(sessionHash),
   resetHooksState: () => {
     recentFocusEventByKey.clear()
     inFlightFocusEvents.clear()
@@ -121,6 +125,7 @@ const __testHandle = {
     inFlightPromptRequests.clear()
     subagentSessionIds.clear()
     registeredSessionHashes.clear()
+    sessionTitles.clear()
     firstEventHandled = false
     sdkPromptClientPromise = null
     promptClientPromise = null
@@ -1158,7 +1163,9 @@ const spawnAgentEvent = async (
       resolve({ code, signal, stdout, stderr })
     })
 
-    child.stdin.write(JSON.stringify(event))
+    // Every dispatch path funnels through here, so this is the one place the
+    // agent-owned title has to be attached.
+    child.stdin.write(JSON.stringify(withSessionTitle(event)))
     child.stdin.end()
   })
 }
@@ -2715,6 +2722,37 @@ const shouldSkipSubagentHooks = (
   return skip
 }
 
+// OpenCode owns the session title and puts it on every `session.created` /
+// `session.updated` payload, so back2vibing never has to read OpenCode's
+// database to recover it. Those events reach this plugin whether or not we
+// dispatch them, so the title is cached here and attached to everything we send.
+const sessionTitles = new Map<string, string>()
+
+// OpenCode seeds every session with `New session - <ISO timestamp>` and replaces
+// it once the first message has been summarized. Storing the placeholder would
+// clobber a real title, so drop it.
+const OPENCODE_PLACEHOLDER_TITLE = /^New session - \d{4}-\d{2}-\d{2}T/
+
+/** True when this event carried a title we had not seen for the session yet. */
+const rememberSessionTitle = (event: Record<string, unknown>, sessionHash?: string) => {
+  if (!sessionHash) return false
+  const title = pickString(asRecord(asRecord(event.properties)?.info)?.title)
+  if (!title || OPENCODE_PLACEHOLDER_TITLE.test(title)) return false
+  if (sessionTitles.get(sessionHash) === title) return false
+  sessionTitles.set(sessionHash, title)
+  return true
+}
+
+const withSessionTitle = (event: Record<string, unknown>) => {
+  const title = sessionTitles.get(extractSessionId(event) || '')
+  return title ? { ...event, session_title: title } : event
+}
+
+const sessionTitlePushEvent = (sessionHash: string) => ({
+  type: 'session.title',
+  session_id: sessionHash,
+})
+
 const extractSessionId = (event: Record<string, unknown>) => {
   const session = asRecord(event.session)
   const properties = asRecord(event.properties)
@@ -3709,6 +3747,22 @@ export const Back2VibingPlugin: Plugin = async ({
           `subagent_skip=${skipSubagentHookEvent} parent=${sanitizeLogValue(parentSessionHash || '<none>')} ` +
           `prompt_intercept=${isPromptInterceptEvent}`,
       )
+
+      // Every event reaches this handler, including the ~33 `session.updated`
+      // per session that we otherwise drop — so this is where the title becomes
+      // observable. Push a rename straight through instead of waiting for the
+      // next event we happen to dispatch, but only when the title actually
+      // changed, and only for a session back2vibing already knows about, so an
+      // idempotent re-register can never create one early.
+      if (rememberSessionTitle(event, sessionHash) && registeredSessionHashes.has(sessionHash)) {
+        void dispatchAgentEvent(directory, 'session.title', sessionTitlePushEvent(sessionHash))
+      }
+
+      // The cache lives for the whole plugin process, so drop the entry with the
+      // session rather than letting it grow for the server's lifetime.
+      if (sessionHash && SESSION_END_EVENT_TYPES.has(eventType)) {
+        sessionTitles.delete(sessionHash)
+      }
 
       if (DEBUG_EVENTS) {
         const summary = summarizeEvent(event, directory)
