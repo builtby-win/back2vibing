@@ -119,9 +119,7 @@ const __testHandle = {
   resetHooksState: () => {
     recentFocusEventByKey.clear()
     inFlightFocusEvents.clear()
-    recentIdleRequestBySession.clear()
     directBusyStatusBySession.clear()
-    activePromptIntercepts.clear()
     inFlightPromptRequests.clear()
     subagentSessionIds.clear()
     registeredSessionHashes.clear()
@@ -2284,8 +2282,8 @@ const subagentSessionIds = new Set<string>()
 const BUSY_IDLE_REQUEST_GUARD_MS = 3000
 const RECENT_IDLE_REQUEST_MAX_ENTRIES = 256
 const recentIdleRequestBySession = new Map<string, { requestId: string; seenAt: number }>()
-const directBusyStatusBySession = new Set<string>()
 
+const directBusyStatusBySession = new Set<string>()
 const pruneRecentIdleRequests = (now: number) => {
   const cutoff = now - BUSY_IDLE_REQUEST_GUARD_MS * 2
   recentIdleRequestBySession.forEach((entry, sessionHash) => {
