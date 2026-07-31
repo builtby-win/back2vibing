@@ -4,10 +4,7 @@
   "hooks": {
     "b2v-pi.ts": {
       "description": "Oh My Pi / Pi Agent extension hook",
-      "agent_ids": [
-        "oh-my-pi",
-        "pi-agent"
-      ],
+      "agent_ids": ["oh-my-pi", "pi-agent"],
       "versions": [
         {
           "hook_version": 1,
@@ -21,9 +18,7 @@
     },
     "b2v-hooks.ts": {
       "description": "OpenCode plugin hook",
-      "agent_ids": [
-        "opencode"
-      ],
+      "agent_ids": ["opencode"],
       "versions": [
         {
           "hook_version": 1,
@@ -37,13 +32,7 @@
     },
     "b2v-agent-event.sh": {
       "description": "Shared shell transport for Claude, Codex, Gemini, Kiro, etc.",
-      "agent_ids": [
-        "anthropic-claude-code",
-        "openai-codex",
-        "gemini-cli",
-        "kiro",
-        "jcode"
-      ],
+      "agent_ids": ["anthropic-claude-code", "openai-codex", "gemini-cli", "kiro", "jcode"],
       "versions": [
         {
           "hook_version": 1,
@@ -57,9 +46,7 @@
     },
     "b2v-amp.ts": {
       "description": "Sourcegraph Amp hook",
-      "agent_ids": [
-        "sourcegraph-amp"
-      ],
+      "agent_ids": ["sourcegraph-amp"],
       "versions": [
         {
           "hook_version": 1,
@@ -73,9 +60,7 @@
     },
     "b2v_hooks.py": {
       "description": "Hermes Python hook",
-      "agent_ids": [
-        "hermes"
-      ],
+      "agent_ids": ["hermes"],
       "versions": [
         {
           "hook_version": 1,
