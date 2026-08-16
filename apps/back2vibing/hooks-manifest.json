@@ -4,7 +4,10 @@
   "hooks": {
     "b2v-pi.ts": {
       "description": "Oh My Pi / Pi Agent extension hook",
-      "agent_ids": ["oh-my-pi", "pi-agent"],
+      "agent_ids": [
+        "oh-my-pi",
+        "pi-agent"
+      ],
       "versions": [
         {
           "hook_version": 1,
@@ -18,11 +21,13 @@
     },
     "b2v-hooks.ts": {
       "description": "OpenCode plugin hook",
-      "agent_ids": ["opencode"],
+      "agent_ids": [
+        "opencode"
+      ],
       "versions": [
         {
           "hook_version": 1,
-          "sha256": "47b7009feb80ec87dde5fcbf8deba5c3e9f107cfe2d0bf286e54cf5bab16b182",
+          "sha256": "f38ed09d75a5d6a81fdabf965228c32ec380adbe47c9539257d5e3c4a07da156",
           "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-hooks.ts",
           "min_app_version": "0.8.0",
           "min_agent_version": null,
@@ -32,7 +37,13 @@
     },
     "b2v-agent-event.sh": {
       "description": "Shared shell transport for Claude, Codex, Gemini, Kiro, etc.",
-      "agent_ids": ["anthropic-claude-code", "openai-codex", "gemini-cli", "kiro", "jcode"],
+      "agent_ids": [
+        "anthropic-claude-code",
+        "openai-codex",
+        "gemini-cli",
+        "kiro",
+        "jcode"
+      ],
       "versions": [
         {
           "hook_version": 1,
@@ -46,7 +57,9 @@
     },
     "b2v-amp.ts": {
       "description": "Sourcegraph Amp hook",
-      "agent_ids": ["sourcegraph-amp"],
+      "agent_ids": [
+        "sourcegraph-amp"
+      ],
       "versions": [
         {
           "hook_version": 1,
@@ -60,7 +73,9 @@
     },
     "b2v_hooks.py": {
       "description": "Hermes Python hook",
-      "agent_ids": ["hermes"],
+      "agent_ids": [
+        "hermes"
+      ],
       "versions": [
         {
           "hook_version": 1,

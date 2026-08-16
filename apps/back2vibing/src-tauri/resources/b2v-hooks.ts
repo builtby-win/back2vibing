@@ -1935,7 +1935,7 @@ const resolveFocusedBundleId = (
   )
 }
 
-type LicenseState = 'pro' | 'non_pro' | 'check_failed'
+type LicenseState = 'pro' | 'gui' | 'blocked' | 'check_failed'
 
 const checkLicenseState = async (): Promise<LicenseState> => {
   const result = await ipcRequest('check_license_status', {})
@@ -1950,7 +1950,8 @@ const checkLicenseState = async (): Promise<LicenseState> => {
           ? data.status.trim().toLowerCase()
           : ''
     if (tier === 'pro') return 'pro'
-    if (tier) return 'non_pro'
+    if (tier === 'gui') return 'gui'
+    if (tier === 'blocked') return 'blocked'
     return 'check_failed'
   } catch {
     return 'check_failed'
@@ -3978,6 +3979,8 @@ export const Back2VibingPlugin: Plugin = async ({
         const lifecycleRequestId = extractPromptRequestId(event)
 
         if (lifecycleSignal === 'busy' && !SESSION_START_EVENT_TYPES.has(eventType)) {
+          const licenseState = await checkLicenseState()
+          if (licenseState === 'gui' || licenseState === 'blocked') return
           if (
             eventType === 'session.status' &&
             isBusyForRecentIdleRequest(sessionHash, lifecycleRequestId)
@@ -4016,13 +4019,15 @@ export const Back2VibingPlugin: Plugin = async ({
 
         if (isFocusCandidateEvent(eventType, event)) {
           handledEvent = true
+          const licenseState = await checkLicenseState()
+          if (licenseState === 'blocked') return
           const typingSignals = extractTypingSignals(event)
           const notificationType = getInteractionPromptNotificationType(eventType, event)
           const tmux = await getTmuxInfo()
           const terminalTabId = getTerminalTabIdFromEnv()
           const bundleId = resolveFocusedBundleId(undefined)
 
-          if (lifecycleSignal) {
+          if (lifecycleSignal && licenseState !== 'gui') {
             const shouldUseWindowsAgentEvent =
               process.platform === 'win32' &&
               !process.env.VITEST &&
@@ -4121,8 +4126,7 @@ export const Back2VibingPlugin: Plugin = async ({
             // But let's proceed.
           }
 
-          const licenseState = await checkLicenseState()
-          if (licenseState !== 'non_pro') {
+          if (licenseState !== 'gui') {
             if (licenseState === 'pro') {
               await logLine('💎 Pro Tier: Using IPC Focus')
             } else {
@@ -4188,7 +4192,8 @@ export const Back2VibingPlugin: Plugin = async ({
         // 2. Session Start
         if (SESSION_START_EVENT_TYPES.has(eventType)) {
           handledEvent = true
-          if ((await checkLicenseState()) === 'non_pro') return
+          const licenseState = await checkLicenseState()
+          if (licenseState === 'gui' || licenseState === 'blocked') return
 
           // Ensure session hash exists
           if (!sessionHash) {
