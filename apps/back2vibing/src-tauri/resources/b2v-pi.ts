@@ -282,6 +282,10 @@ type ExtensionAPI = {
     eventName: 'session_start',
     handler: (event: PiSessionEvent, ctx: ExtensionContext) => void,
   ): void
+  on(
+    eventName: 'session_switch' | 'session_branch',
+    handler: (event: Record<string, unknown>, ctx: ExtensionContext) => void,
+  ): void
   on(eventName: 'agent_start', handler: (event: PiAgentEvent, ctx: ExtensionContext) => void): void
   on(eventName: 'agent_end', handler: (event: PiAgentEndEvent, ctx: ExtensionContext) => void): void
   on(eventName: 'turn_start', handler: (event: PiTurnEvent, ctx: ExtensionContext) => void): void
@@ -985,6 +989,19 @@ export default function back2vibing(pi: ExtensionAPI) {
     activeContext = ctx
     emitNonBlocking('session_start', event as Record<string, unknown>, ctx)
   })
+
+  // omp fires `session_start` once per process, at extension init. `/new`,
+  // `/resume`, forks and handoffs swap the session inside a live process and
+  // only fire `session_switch`/`session_branch`. Without these, the first event
+  // back2vibing ever sees for the new session is a status ping that carries no
+  // terminal identity, so the tile registers against the host terminal window
+  // instead of this pane — and every session in the window looks the same.
+  const onSessionChanged = (event: Record<string, unknown>, ctx: ExtensionContext) => {
+    activeContext = ctx
+    emitNonBlocking('session_start', { ...event, type: 'session_start' }, ctx)
+  }
+  pi.on('session_switch', onSessionChanged)
+  pi.on('session_branch', onSessionChanged)
 
   pi.on('agent_start', (event: PiAgentEvent, ctx: ExtensionContext) => {
     activeContext = ctx
