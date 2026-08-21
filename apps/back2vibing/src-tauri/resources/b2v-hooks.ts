@@ -2099,6 +2099,8 @@ const terminalBundleIdFromProgramHint = (value: unknown) => {
       return 'co.zeit.hyper'
     case 'zellij':
       return 'org.zellij'
+    case 'herdr':
+      return 'dev.herdr'
     case 'kitty':
       return 'net.kovidgoyal.kitty'
     case 'wezterm':
@@ -2175,6 +2177,17 @@ const buildTerminalEnvFromBundleId = (bundleId?: string) => {
         zellij_session_name: sessionName,
       }
     }
+    case 'dev.herdr': {
+      const paneId = nonEmptyEnvString('HERDR_PANE_ID')
+      const socketPath = nonEmptyEnvString('HERDR_SOCKET_PATH')
+      if (!paneId) return undefined
+      return {
+        herdr_pane_id: paneId,
+        herdr_tab_id: nonEmptyEnvString('HERDR_TAB_ID'),
+        herdr_workspace_id: nonEmptyEnvString('HERDR_WORKSPACE_ID'),
+        herdr_socket_path: socketPath,
+      }
+    }
     case 'com.github.wez.wezterm': {
       const paneId = nonEmptyEnvNumber('WEZTERM_PANE')
       const unixSocket = nonEmptyEnvString('WEZTERM_UNIX_SOCKET')
@@ -2245,7 +2258,15 @@ const buildRuntimeTerminalInput = (
   if (clientPid !== null) input.tmux_client_pid = clientPid
   const envBundleId = resolveExpectedBundleIdHint()
   if (envBundleId) input.env_bundle_id = envBundleId
-  const envTerminalEnv = buildTerminalEnvFromBundleId(envBundleId)
+  let envTerminalEnv = buildTerminalEnvFromBundleId(envBundleId)
+  if (!envTerminalEnv && process.env.HERDR_PANE_ID) {
+    envTerminalEnv = {
+      herdr_pane_id: nonEmptyEnvString('HERDR_PANE_ID'),
+      herdr_tab_id: nonEmptyEnvString('HERDR_TAB_ID'),
+      herdr_workspace_id: nonEmptyEnvString('HERDR_WORKSPACE_ID'),
+      herdr_socket_path: nonEmptyEnvString('HERDR_SOCKET_PATH'),
+    }
+  }
   if (envTerminalEnv) input.env_terminal_env = envTerminalEnv
   const envTabId = getTerminalTabIdFromEnv()
   if (envTabId) input.env_terminal_tab_id = envTabId
@@ -3006,6 +3027,57 @@ const hasSshRoutingMetadata = (
   !!normalizeTmuxValue(session?.b2v_ssh_tunnel_id || '') ||
   !!normalizeTmuxValue(session?.b2v_ssh_target || '')
 
+const sshSessionUpdatedAtMs = (session: SshSessionEnv) => {
+  const snapshot = session.ssh_forward_snapshot as Record<string, unknown> | undefined
+  const raw = snapshot?.updated_at_ms
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
+}
+
+/** Host part of an ssh target, so `winston@wz.zhaos.org:22` becomes `wz.zhaos.org`. */
+const sshTargetHost = (target: string | undefined) => {
+  const trimmed = normalizeTmuxValue(target || '')
+  if (!trimmed) return ''
+  const afterUser = trimmed.includes('@') ? trimmed.slice(trimmed.lastIndexOf('@') + 1) : trimmed
+  return afterUser.replace(/:\d+$/, '').toLowerCase()
+}
+
+/**
+ * Names this machine answers to, used to tell cached SSH snapshots apart when
+ * more than one connection is open. `SSH_CONNECTION` holds
+ * "clientIp clientPort serverIp serverPort", so its third field is the address
+ * the client actually dialed.
+ */
+const localSshHostIdentities = () => {
+  const identities = new Set<string>()
+  const push = (value: string | null | undefined) => {
+    const trimmed = normalizeTmuxValue(value || '').toLowerCase()
+    if (trimmed) identities.add(trimmed)
+  }
+
+  let hostname = ''
+  try {
+    hostname = os.hostname()
+  } catch {
+    hostname = ''
+  }
+  push(hostname)
+  push(hostname.split('.')[0])
+  push(process.env.HOSTNAME)
+
+  const connection = normalizeTmuxValue(process.env.SSH_CONNECTION || '').split(/\s+/)
+  if (connection.length >= 3) push(connection[2])
+
+  return identities
+}
+
+const sshSessionTargetsHost = (session: SshSessionEnv, identities: Set<string>) => {
+  const host = sshTargetHost(session.b2v_ssh_target)
+  if (!host) return false
+  if (identities.has(host)) return true
+  const shortHost = host.split('.')[0]
+  return shortHost !== host && identities.has(shortHost)
+}
+
 const resolveSshEnvForCurrentTty = async (): Promise<SshSessionEnv | null> => {
   const ttyCandidates = await resolveCurrentSshTtyCandidates()
   const ttyEnv = await readSshForwardTtyEnv()
@@ -3033,7 +3105,42 @@ const resolveSshEnvForCurrentTty = async (): Promise<SshSessionEnv | null> => {
     if (hasSshRoutingMetadata(session)) sessions.push(session)
   }
 
-  return sessions.length === 1 ? sessions[0] : null
+  if (sessions.length <= 1) {
+    return sessions[0] || null
+  }
+
+  // Entries are keyed by the LOCAL tty (/dev/ttysNNN); a remote shell runs on a
+  // Linux pty and can never match that key, so several open connections land
+  // here. Returning null drops the forwarded terminal target and the session
+  // registers with no window to focus, so narrow instead of giving up: prefer
+  // the connections aimed at this host, then the most recent attach.
+  const identities = localSshHostIdentities()
+  const hostMatches = sessions.filter((session) => sshSessionTargetsHost(session, identities))
+  const pool = hostMatches.length > 0 ? hostMatches : sessions
+  if (pool.length === 1) {
+    return pool[0]
+  }
+
+  let freshest = pool[0]
+  let tied = false
+  for (const candidate of pool.slice(1)) {
+    const candidateAt = sshSessionUpdatedAtMs(candidate)
+    const freshestAt = sshSessionUpdatedAtMs(freshest)
+    if (candidateAt > freshestAt) {
+      freshest = candidate
+      tied = false
+    } else if (candidateAt === freshestAt) {
+      tied = true
+    }
+  }
+
+  // A tie or missing timestamps means there is nothing left to choose on, and a
+  // coin flip would route focus to the wrong terminal window.
+  if (tied || sshSessionUpdatedAtMs(freshest) === 0) {
+    return null
+  }
+
+  return freshest
 }
 
 const buildTmuxChain = (tmux: TmuxSnapshot | null, sshSession: SshSessionEnv | null) => {
