@@ -202,7 +202,9 @@ resolve_b2v_cli() {
     return 0
   fi
 
-  for candidate in "$PWD/target/debug/b2v"; do
+  # bash unsets PWD when the working directory was deleted under the agent, so
+  # `set -u` would abort here instead of just skipping the dev-build candidate.
+  for candidate in "${PWD:-/nonexistent}/target/debug/b2v"; do
     if [ -x "$candidate" ]; then
       printf '%s\n' "$candidate" > "$cache_file" 2>/dev/null || true
       printf '%s\n' "$candidate"
@@ -216,7 +218,7 @@ resolve_b2v_cli() {
 
 B2V_CLI="$(resolve_b2v_cli || true)"
 
-b2v_hook_log "start agent_id=$AGENT_ID event_hint=${EVENT_HINT:-<none>} pwd=$PWD b2v_cli=${B2V_CLI:-<missing>}"
+b2v_hook_log "start agent_id=$AGENT_ID event_hint=${EVENT_HINT:-<none>} pwd=${PWD:-<deleted>} b2v_cli=${B2V_CLI:-<missing>}"
 
 if [ "${B2V_SSH_WRAPPER:-0}" = "1" ]; then
   mkdir -p "$B2V_LOG_DIR" 2>/dev/null || true

@@ -431,8 +431,11 @@ const emit = async (eventName: string, event: Record<string, unknown>, ctx: Exte
     await new Promise<void>((resolve) => {
       let done = false
 
+      // No `cwd`: the session's workspace can be deleted under a still-running
+      // agent (worktree removed), and posix_spawn with a missing cwd fails
+      // ENOENT — silently, because the error handler below swallows it. The
+      // workspace path travels in the payload instead.
       const child = spawn(AGENT_EVENT_SCRIPT, [AGENT_ID, '--event', eventName], {
-        cwd: ctx.cwd,
         env: process.env,
         stdio: ['pipe', 'ignore', 'ignore'],
       })
@@ -476,7 +479,7 @@ export const emitNonBlocking = (
     let done = false
     let timeout: ReturnType<typeof setTimeout> | undefined
     const child = spawn(scriptPath, [AGENT_ID, '--event', eventName], {
-      cwd: ctx.cwd,
+      // No `cwd` — see emit(): a deleted workspace makes spawn fail ENOENT.
       env: process.env,
       stdio: ['pipe', 'ignore', 'ignore'],
     })
@@ -520,7 +523,6 @@ export const emitBlocking = async (
       let done = false
       let stdout = ''
       const child = spawn(scriptPath, [AGENT_ID, '--event', eventName], {
-        cwd: ctx.cwd,
         env: process.env,
         stdio: ['pipe', 'pipe', 'ignore'],
       })
