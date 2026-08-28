@@ -2214,6 +2214,12 @@ const buildTerminalEnvFromBundleId = (bundleId?: string) => {
 }
 
 const resolveExpectedBundleIdHint = () => {
+  // A herdr pane is forked by the long-lived `herdr server` daemon, so its
+  // `__CFBundleIdentifier` / `TERM_PROGRAM` name whichever terminal started the
+  // daemon, not the one drawing the pane. The backend resolves the real host
+  // from the live client's process ancestry.
+  if (nonEmptyEnvString('HERDR_PANE_ID')) return 'dev.herdr'
+
   const explicitBundleId = normalizeExpectedBundleIdHint(process.env.__CFBundleIdentifier)
   if (explicitBundleId) return explicitBundleId
 
@@ -2240,6 +2246,9 @@ const normalizeItermSessionId = (value: string) => {
 }
 
 const getTerminalTabIdFromEnv = () => {
+  // The daemon-inherited ITERM_SESSION_ID in a herdr pane names a tab in a
+  // different app, so it must never become this session's terminal target.
+  if (nonEmptyEnvString('HERDR_PANE_ID')) return ''
   if (process.env.__CFBundleIdentifier !== 'com.googlecode.iterm2') return ''
   const raw = pickString(process.env.ITERM_SESSION_ID)
   if (!raw) return ''
