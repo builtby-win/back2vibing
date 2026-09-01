@@ -37,10 +37,28 @@ let fallbackSessionHash: string | undefined
 
 const isBack2VibingDisabled = () => process.env.B2V_DISABLED === 'true'
 
+const nonEmptyEnvString = (name: string) => {
+  const value = process.env[name]?.trim()
+  return value ? value : undefined
+}
+
 const expectedBundleId = () => {
+  if (nonEmptyEnvString('HERDR_PANE_ID')) return 'dev.herdr'
   const bundleId = process.env.__CFBundleIdentifier?.trim()
   return bundleId ? bundleId : undefined
 }
+
+const buildHerdrEnv = () => {
+  const paneId = nonEmptyEnvString('HERDR_PANE_ID')
+  if (!paneId) return undefined
+  return {
+    herdr_pane_id: paneId,
+    herdr_tab_id: nonEmptyEnvString('HERDR_TAB_ID'),
+    herdr_workspace_id: nonEmptyEnvString('HERDR_WORKSPACE_ID'),
+    herdr_socket_path: nonEmptyEnvString('HERDR_SOCKET_PATH'),
+  }
+}
+
 
 const explicitChildSessionParent = () => {
   if (process.env.B2V_CHILD_SESSION !== 'true') return undefined
@@ -397,6 +415,7 @@ export const buildPiRawEvent = (
   const scope = sessionScope(ctx)
   const bundleId = expectedBundleId()
   const title = sessionTitle(ctx)
+  const herdrEnv = buildHerdrEnv()
 
   return {
     ...event,
@@ -405,6 +424,15 @@ export const buildPiRawEvent = (
     cwd: ctx.cwd,
     ...(title ? { session_title: title } : {}),
     ...(bundleId ? { expected_bundle_id: bundleId } : {}),
+    ...(herdrEnv ? { terminal_env: herdrEnv } : {}),
+    ...(herdrEnv
+      ? {
+          runtime_terminal_input: {
+            env_bundle_id: bundleId,
+            env_terminal_env: herdrEnv,
+          },
+        }
+      : {}),
     ...(scope
       ? {
           mode: 'subagent',

@@ -8,7 +8,7 @@
       "versions": [
         {
           "hook_version": 2,
-          "sha256": "53b464e5dc312130a8f6f4c725ca722c22393d4609ef9590ec70f123df6dc084",
+          "sha256": "c7799fe4713c287ce8e479f5ed4ae9a7d334113a70f5a1c6706820cda973239b",
           "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-pi.ts",
           "min_app_version": "0.8.0",
           "min_agent_version": null,
