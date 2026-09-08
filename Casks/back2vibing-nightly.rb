@@ -1,6 +1,6 @@
 cask "back2vibing-nightly" do
-  version "0.9.46"
-  sha256 "6f8a28b6d93f776f3395736605dd7e8d61b2e76e01538e996a15ea63b7a58930"
+  version "0.9.47"
+  sha256 "f5b0d270ba8fa63cbb4ee46b9f3dc00560fe938f20b5c1ef784f3605d8c5085a"
 
   url "https://github.com/builtby-win/back2vibing/releases/download/nightly/back2vibing_#{version}_aarch64.dmg",
       verified: "github.com/builtby-win/back2vibing/"
