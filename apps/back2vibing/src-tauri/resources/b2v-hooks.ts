@@ -2099,8 +2099,6 @@ const terminalBundleIdFromProgramHint = (value: unknown) => {
       return 'co.zeit.hyper'
     case 'zellij':
       return 'org.zellij'
-    case 'herdr':
-      return 'dev.herdr'
     case 'kitty':
       return 'net.kovidgoyal.kitty'
     case 'wezterm':
@@ -2177,17 +2175,6 @@ const buildTerminalEnvFromBundleId = (bundleId?: string) => {
         zellij_session_name: sessionName,
       }
     }
-    case 'dev.herdr': {
-      const paneId = nonEmptyEnvString('HERDR_PANE_ID')
-      const socketPath = nonEmptyEnvString('HERDR_SOCKET_PATH')
-      if (!paneId) return undefined
-      return {
-        herdr_pane_id: paneId,
-        herdr_tab_id: nonEmptyEnvString('HERDR_TAB_ID'),
-        herdr_workspace_id: nonEmptyEnvString('HERDR_WORKSPACE_ID'),
-        herdr_socket_path: socketPath,
-      }
-    }
     case 'com.github.wez.wezterm': {
       const paneId = nonEmptyEnvNumber('WEZTERM_PANE')
       const unixSocket = nonEmptyEnvString('WEZTERM_UNIX_SOCKET')
@@ -2214,12 +2201,6 @@ const buildTerminalEnvFromBundleId = (bundleId?: string) => {
 }
 
 const resolveExpectedBundleIdHint = () => {
-  // A herdr pane is forked by the long-lived `herdr server` daemon, so its
-  // `__CFBundleIdentifier` / `TERM_PROGRAM` name whichever terminal started the
-  // daemon, not the one drawing the pane. The backend resolves the real host
-  // from the live client's process ancestry.
-  if (nonEmptyEnvString('HERDR_PANE_ID')) return 'dev.herdr'
-
   const explicitBundleId = normalizeExpectedBundleIdHint(process.env.__CFBundleIdentifier)
   if (explicitBundleId) return explicitBundleId
 
@@ -2228,6 +2209,10 @@ const resolveExpectedBundleIdHint = () => {
     terminalBundleIdFromProgramHint(process.env.TERM_PROGRAM_NAME) ||
     terminalBundleIdFromProgramHint(process.env.LC_TERMINAL)
   if (envBundleId) return envBundleId
+
+  if (process.env.GHOSTTY_RESOURCES_DIR || process.env.GHOSTTY_BIN_DIR) {
+    return 'com.mitchellh.ghostty'
+  }
 
   return terminalBundleIdFromTermValue(process.env.TERM)
 }
@@ -2268,8 +2253,9 @@ const buildRuntimeTerminalInput = (
   const envBundleId = resolveExpectedBundleIdHint()
   if (envBundleId) input.env_bundle_id = envBundleId
   let envTerminalEnv = buildTerminalEnvFromBundleId(envBundleId)
-  if (!envTerminalEnv && process.env.HERDR_PANE_ID) {
+  if (process.env.HERDR_PANE_ID) {
     envTerminalEnv = {
+      ...envTerminalEnv,
       herdr_pane_id: nonEmptyEnvString('HERDR_PANE_ID'),
       herdr_tab_id: nonEmptyEnvString('HERDR_TAB_ID'),
       herdr_workspace_id: nonEmptyEnvString('HERDR_WORKSPACE_ID'),

@@ -43,9 +43,10 @@ const nonEmptyEnvString = (name: string) => {
 }
 
 const expectedBundleId = () => {
-  if (nonEmptyEnvString('HERDR_PANE_ID')) return 'dev.herdr'
   const bundleId = process.env.__CFBundleIdentifier?.trim()
-  return bundleId ? bundleId : undefined
+  if (bundleId) return bundleId
+  if (process.env.GHOSTTY_RESOURCES_DIR || process.env.GHOSTTY_BIN_DIR) return 'com.mitchellh.ghostty'
+  return undefined
 }
 
 const buildHerdrEnv = () => {
