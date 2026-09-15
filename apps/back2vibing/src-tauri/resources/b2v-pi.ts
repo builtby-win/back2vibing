@@ -45,7 +45,8 @@ const nonEmptyEnvString = (name: string) => {
 const expectedBundleId = () => {
   const bundleId = process.env.__CFBundleIdentifier?.trim()
   if (bundleId) return bundleId
-  if (process.env.GHOSTTY_RESOURCES_DIR || process.env.GHOSTTY_BIN_DIR) return 'com.mitchellh.ghostty'
+  if (process.env.GHOSTTY_RESOURCES_DIR || process.env.GHOSTTY_BIN_DIR)
+    return 'com.mitchellh.ghostty'
   return undefined
 }
 
@@ -59,7 +60,6 @@ const buildHerdrEnv = () => {
     herdr_socket_path: nonEmptyEnvString('HERDR_SOCKET_PATH'),
   }
 }
-
 
 const explicitChildSessionParent = () => {
   if (process.env.B2V_CHILD_SESSION !== 'true') return undefined
