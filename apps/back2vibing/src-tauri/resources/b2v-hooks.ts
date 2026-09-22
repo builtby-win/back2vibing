@@ -4,8 +4,13 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-// @ts-expect-error OpenCode provides this package in the hook runtime.
+// @ts-expect-error OpenCode V1 provides this package in the hook runtime.
 import type { Plugin } from '@opencode-ai/plugin'
+
+// Dual entrypoint (named Back2VibingPlugin + default { id, setup }) —
+// see migrate-v1 "Support V1 and V2 from one package". Do not value-import
+// `@opencode/plugin`; Plugin.define is optional sugar and breaks V1 hosts that
+// only ship `@opencode-ai/plugin`.
 
 const execFileAsync = promisify(execFile)
 
@@ -116,6 +121,7 @@ const __testHandle = {
     rememberSessionTitle(event, sessionHash),
   withSessionTitle: (event: Record<string, unknown>) => withSessionTitle(event),
   sessionTitlePushEvent: (sessionHash: string) => sessionTitlePushEvent(sessionHash),
+  mapV2EventToV1: (event: Record<string, unknown>) => mapV2EventToV1(event),
   resetHooksState: () => {
     recentFocusEventByKey.clear()
     inFlightFocusEvents.clear()
@@ -2376,16 +2382,25 @@ const getSessionStatusType = (event: Record<string, unknown>) => {
   const properties = asRecord(event.properties)
   const session = asRecord(event.session)
   const info = asRecord(properties?.info)
+  const data = asRecord(event.data)
+  const dataInfo = asRecord(data?.info)
 
   // 1. Check direct status string in various places
-  const rawStatus = pickString(properties?.status, session?.status, event.status, info?.status)
+  const rawStatus = pickString(
+    properties?.status,
+    session?.status,
+    event.status,
+    info?.status,
+    data?.status,
+    dataInfo?.status,
+  )
 
   if (rawStatus) {
     return rawStatus.trim().toLowerCase()
   }
 
   // 2. Check status object (common in some event formats)
-  const statusObj = asRecord(properties?.status || session?.status || event.status)
+  const statusObj = asRecord(properties?.status || session?.status || event.status || data?.status)
   if (statusObj) {
     return pickString(statusObj.type, statusObj.name, statusObj.id).trim().toLowerCase()
   }
@@ -2772,19 +2787,28 @@ const extractSessionId = (event: Record<string, unknown>) => {
   const session = asRecord(event.session)
   const properties = asRecord(event.properties)
   const propertiesInfo = asRecord(properties?.info)
+  const data = asRecord(event.data)
+  const dataInfo = asRecord(data?.info)
 
   const candidate = pickString(
     event.session_id,
     event.sessionId,
+    event.sessionID,
     event.session_hash,
     event.sessionHash,
     session?.session_id,
     session?.id,
     session?.hash,
+    session?.sessionID,
     properties?.sessionID,
     properties?.session_id,
     properties?.sessionId,
     propertiesInfo?.sessionID,
+    data?.sessionID,
+    data?.session_id,
+    data?.sessionId,
+    dataInfo?.sessionID,
+    dataInfo?.id,
     event.conversation_id,
   )
 
@@ -3300,6 +3324,284 @@ let sdkPromptClientPromise: Promise<PermissionReplyClient | null> | null = null
 let promptClientPromise: Promise<PermissionReplyClient | null> | null = null
 const inFlightPromptRequests = new Map<string, Promise<void>>()
 const registeredSessionHashes = new Set<string>()
+
+/** Live V2 hosts put the payload under `data`; V1 used `properties`. */
+const payloadOfV2Event = (event: Record<string, unknown>) => {
+  const data = asRecord(event.data)
+  if (data) return data
+  const properties = asRecord(event.properties)
+  if (properties) return properties
+  return {}
+}
+
+const normalizeV2EventForV1 = (event: Record<string, unknown>) => {
+  const data = asRecord(event.data)
+  if (!data) return event
+  return {
+    ...event,
+    properties: { ...data, ...asRecord(event.properties) },
+  }
+}
+
+const formFieldToQuestion = (field: Record<string, unknown>) => {
+  const title = pickString(field.title, field.key)
+  if (!title) return undefined
+  const options = Array.isArray(field.options)
+    ? field.options
+        .filter((option): option is Record<string, unknown> => Boolean(asRecord(option)))
+        .map((option) => ({
+          label: pickString(option.label),
+          description: pickString(option.description),
+        }))
+    : []
+  const question: Record<string, unknown> = {
+    question: title,
+    header: title.slice(0, 30),
+    options,
+  }
+  if (field.type === 'multiselect') question.multiple = true
+  return question
+}
+
+const formAnswerToV1Answers = (answer: unknown): string[][] => {
+  const record = asRecord(answer)
+  if (!record) return []
+  return Object.values(record).map((value) =>
+    Array.isArray(value)
+      ? value.filter((entry): entry is string => typeof entry === 'string')
+      : [String(value)],
+  )
+}
+
+/**
+ * Map one V2 server event into zero or more V1-shaped events the shared hook
+ * understands. V2 dropped busy/idle `session.status` / `session.idle` in favor
+ * of `session.execution.*`, and replaced `question.*` with `form.*`.
+ * Reference: https://opencode.ai/v2/docs/build/plugins/migrate-v1
+ */
+const mapV2EventToV1 = (event: Record<string, unknown>): Record<string, unknown>[] => {
+  const type = typeof event.type === 'string' ? event.type : ''
+  const props = payloadOfV2Event(event)
+
+  if (
+    type === 'session.execution.started' ||
+    type === 'session.execution.succeeded' ||
+    type === 'session.execution.failed' ||
+    type === 'session.execution.interrupted'
+  ) {
+    const sessionID = pickString(props.sessionID, props.session_id, props.sessionId)
+    if (!sessionID) return []
+    if (type === 'session.execution.started') {
+      return [
+        {
+          type: 'session.status',
+          properties: { sessionID, status: { type: 'busy' } },
+        },
+      ]
+    }
+    const out: Record<string, unknown>[] = []
+    if (type === 'session.execution.failed') {
+      out.push({
+        type: 'session.error',
+        properties: {
+          sessionID,
+          error:
+            props.error !== undefined ? props.error : { message: 'v2 session execution failed' },
+        },
+      })
+    }
+    out.push({
+      type: 'session.status',
+      properties: { sessionID, status: { type: 'idle' } },
+    })
+    out.push({
+      type: 'session.idle',
+      properties: { sessionID },
+    })
+    return out
+  }
+
+  if (type === 'form.created') {
+    const form = asRecord(props.form)
+    if (!form) return []
+    const id = pickString(form.id)
+    const sessionID = pickString(form.sessionID, form.session_id, form.sessionId)
+    if (!id || !sessionID || sessionID === 'global') return []
+    const questions = Array.isArray(form.fields)
+      ? form.fields
+          .map((field) => asRecord(field))
+          .filter((field): field is Record<string, unknown> => Boolean(field))
+          .map(formFieldToQuestion)
+          .filter((question): question is Record<string, unknown> => Boolean(question))
+      : []
+    return [{ type: 'question.asked', properties: { id, sessionID, questions } }]
+  }
+
+  if (type === 'form.replied') {
+    const id = pickString(props.id)
+    const sessionID = pickString(props.sessionID, props.session_id, props.sessionId)
+    if (!id || !sessionID || sessionID === 'global') return []
+    return [
+      {
+        type: 'question.replied',
+        properties: {
+          sessionID,
+          requestID: id,
+          answers: formAnswerToV1Answers(props.answer),
+        },
+      },
+    ]
+  }
+
+  if (type === 'form.cancelled') {
+    const id = pickString(props.id)
+    const sessionID = pickString(props.sessionID, props.session_id, props.sessionId)
+    if (!id || !sessionID || sessionID === 'global') return []
+    return [
+      {
+        type: 'question.rejected',
+        properties: { sessionID, requestID: id },
+      },
+    ]
+  }
+
+  if (type === 'permission.asked') {
+    const id = pickString(props.id)
+    const sessionID = pickString(props.sessionID, props.session_id, props.sessionId)
+    if (!id || !sessionID) return [normalizeV2EventForV1(event)]
+    return [
+      {
+        type: 'permission.asked',
+        properties: {
+          id,
+          sessionID,
+          permission: pickString(props.permission, props.action),
+          patterns: Array.isArray(props.patterns)
+            ? props.patterns.filter((value): value is string => typeof value === 'string')
+            : Array.isArray(props.resources)
+              ? props.resources.filter((value): value is string => typeof value === 'string')
+              : [],
+          metadata: asRecord(props.metadata) || {},
+          always: Array.isArray(props.always)
+            ? props.always.filter((value): value is string => typeof value === 'string')
+            : Array.isArray(props.save)
+              ? props.save.filter((value): value is string => typeof value === 'string')
+              : [],
+        },
+      },
+    ]
+  }
+
+  if (type === 'session.created' || type === 'session.deleted') {
+    const sessionID = pickString(props.sessionID, props.session_id, props.sessionId)
+    if (!sessionID) return [normalizeV2EventForV1(event)]
+    const info: Record<string, unknown> = {
+      id: sessionID,
+      ...(asRecord(props.info) || {}),
+    }
+    const parentID = pickString(props.parentID, props.parentId, props.parent_id, info.parentID)
+    if (parentID) info.parentID = parentID
+    if (typeof props.title === 'string') info.title = props.title
+    if (typeof props.agent === 'string') info.agent = props.agent
+    return [
+      {
+        type,
+        properties: {
+          ...props,
+          sessionID,
+          info,
+        },
+      },
+    ]
+  }
+
+  return [normalizeV2EventForV1(event)]
+}
+
+type OpencodeV2PluginContext = {
+  location?: { directory?: string }
+  permission?: {
+    reply?: (args: {
+      sessionID: string
+      requestID: string
+      reply: 'once' | 'always' | 'reject' | string
+    }) => Promise<unknown>
+  }
+  event?: {
+    subscribe?: (options?: { signal?: AbortSignal }) => AsyncIterable<unknown>
+  }
+}
+
+const resolveV2Directory = (ctx: OpencodeV2PluginContext) => {
+  const directory = ctx.location?.directory
+  return typeof directory === 'string' && directory.trim() ? directory : process.cwd()
+}
+
+const buildV2PermissionClient = (
+  ctx: OpencodeV2PluginContext,
+  directory: string,
+): PermissionReplyClient | undefined => {
+  const reply = ctx.permission?.reply
+  if (typeof reply !== 'function') return undefined
+  return {
+    permission: {
+      reply: async (args) => {
+        const requestID = pickString(args.requestID, args.requestId, args.request_id, args.id)
+        const sessionID = pickString(
+          (args as { sessionID?: string }).sessionID,
+          (args as { session_id?: string }).session_id,
+        )
+        return reply({
+          sessionID: sessionID || directory,
+          requestID,
+          reply: args.reply,
+        })
+      },
+    },
+  }
+}
+
+/**
+ * V2 `setup` entry. Registration-only / embedded-v2-on-v1 hosts omit
+ * `event.subscribe`; skip so the V1 `server()` / named-export path owns hooks
+ * and we do not double-fire.
+ */
+const setupBack2VibingV2 = async (ctx: OpencodeV2PluginContext) => {
+  if (typeof ctx?.event?.subscribe !== 'function') {
+    void logLine('v2 setup skipped: host context lacks event.subscribe')
+    return () => {
+      // V1 owns lifecycle handling when the V2 stream is unavailable.
+    }
+  }
+
+  const directory = resolveV2Directory(ctx)
+  const client = buildV2PermissionClient(ctx, directory)
+  const hooks = await Back2VibingPlugin({ directory, client })
+  const controller = new AbortController()
+
+  void (async () => {
+    try {
+      for await (const raw of ctx.event!.subscribe!({ signal: controller.signal })) {
+        const event = asRecord(raw)
+        if (!event) continue
+        for (const mapped of mapV2EventToV1(event)) {
+          try {
+            await hooks.event({ event: mapped })
+          } catch (error) {
+            await logLine(`v2 event handler failed: ${String(error)}`)
+          }
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        await logLine(`v2 event stream ended: ${String(error)}`)
+      }
+    }
+  })()
+
+  void logLine(`v2 setup subscribed directory=${sanitizeLogValue(directory)}`)
+  return () => controller.abort()
+}
 
 export const Back2VibingPlugin: Plugin = async ({
   directory,
@@ -4359,4 +4661,13 @@ export const Back2VibingPlugin: Plugin = async ({
       }
     },
   }
+}
+
+// Dual V1+V2 default export. V2 reads `id` + `setup()`. V1 keeps using the
+// named `Back2VibingPlugin` export above — omit `server()` here so hosts that
+// both walk named exports and call default.server do not double-register.
+// https://opencode.ai/v2/docs/build/plugins/migrate-v1
+export default {
+  id: 'back2vibing',
+  setup: setupBack2VibingV2,
 }
