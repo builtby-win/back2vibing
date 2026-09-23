@@ -36,7 +36,7 @@
       "versions": [
         {
           "hook_version": 1,
-          "sha256": "193628fcb5834fb0798273a88a13b22c5de4cb4b78af6d9d27441b1cd69b684b",
+          "sha256": "a3e2f73d0cc0e9acd8b41e1d5a9cf7df77e6550156346059fa84dc2b40c0307b",
           "url": "https://raw.githubusercontent.com/builtby-win/back2vibing/main/apps/back2vibing/src-tauri/resources/b2v-agent-event.sh",
           "min_app_version": "0.8.0",
           "min_agent_version": null,

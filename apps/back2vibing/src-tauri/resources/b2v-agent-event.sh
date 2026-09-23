@@ -268,20 +268,24 @@ if [ -z "$B2V_CLI" ]; then
   exit 0
 fi
 
-# Pipe stdin through. If CLI fails, exit 0 — no JSON on stdout means
-# the agent uses its native prompt as fallback.
+# Pipe stdin through. A missing CLI is exit 127 ("command not found"), which
+# Codex surfaces as "Hook failed". Swallow every CLI failure and exit 0 so
+# the agent continues; the next event delivers once back2vibing is running.
+# `set -e` would otherwise abort the script with that 127 before this handler.
+set +e
 if [ -n "$PAYLOAD_ARG" ] && { [ -t 0 ] || [ "$AGENT_ID" = "jcode" ]; }; then
   b2v_hook_log "exec cli=$B2V_CLI args=agent-event --agent $AGENT_ID $* payload_source=argv payload_bytes=${#PAYLOAD_ARG} event_hint=$EVENT_HINT"
-  printf '%s' "$PAYLOAD_ARG" | "$B2V_CLI" agent-event --agent "$AGENT_ID" "$@" 2>/dev/null || {
-    b2v_hook_log "cli_failed exit=$? cli=$B2V_CLI"
-    exit 0
-  }
+  printf '%s' "$PAYLOAD_ARG" | "$B2V_CLI" agent-event --agent "$AGENT_ID" "$@" 2>/dev/null
+  cli_status=$?
 else
   b2v_hook_log "exec cli=$B2V_CLI args=agent-event --agent $AGENT_ID $* payload_source=stdin event_hint=$EVENT_HINT"
-  "$B2V_CLI" agent-event --agent "$AGENT_ID" "$@" 2>/dev/null || {
-    b2v_hook_log "cli_failed exit=$? cli=$B2V_CLI"
-    exit 0
-  }
+  "$B2V_CLI" agent-event --agent "$AGENT_ID" "$@" 2>/dev/null
+  cli_status=$?
+fi
+if [ "$cli_status" -ne 0 ]; then
+  b2v_hook_log "cli_failed exit=$cli_status cli=$B2V_CLI"
+  exit 0
 fi
 
 b2v_hook_log "cli_success cli=$B2V_CLI"
+exit 0
