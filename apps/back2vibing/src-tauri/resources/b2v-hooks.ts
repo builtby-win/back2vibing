@@ -120,6 +120,8 @@ const __testHandle = {
   rememberSessionTitle: (event: Record<string, unknown>, sessionHash?: string) =>
     rememberSessionTitle(event, sessionHash),
   withSessionTitle: (event: Record<string, unknown>) => withSessionTitle(event),
+  extractCwd: (event: Record<string, unknown>, directory?: string, sessionHash?: string) =>
+    extractCwd(event, directory, sessionHash),
   sessionTitlePushEvent: (sessionHash: string) => sessionTitlePushEvent(sessionHash),
   mapV2EventToV1: (event: Record<string, unknown>) => mapV2EventToV1(event),
   resetHooksState: () => {
@@ -130,6 +132,7 @@ const __testHandle = {
     subagentSessionIds.clear()
     registeredSessionHashes.clear()
     sessionTitles.clear()
+    sessionDirectories.clear()
     firstEventHandled = false
     sdkPromptClientPromise = null
     promptClientPromise = null
@@ -2837,9 +2840,30 @@ const eventWithSessionId = (event: Record<string, unknown>, sessionHash?: string
   return { ...event, session_id: sessionHash }
 }
 
-const extractCwd = (event: Record<string, unknown>, directory?: string) => {
+// The session's own folder, learned from any event that carries the session.
+// The shared `opencode serve --service` daemon runs every project's sessions,
+// so the plugin's `directory` is wherever the daemon started (usually $HOME),
+// not the repo a session was opened in. Status and idle events name only the
+// session id, so the folder is remembered from the session's earlier events.
+const sessionDirectories = new Map<string, string>()
+
+const eventSessionDirectory = (event: Record<string, unknown>) => {
+  const info = asRecord(asRecord(event.properties)?.info)
+  return pickString(info?.directory, asRecord(info?.path)?.cwd)
+}
+
+const extractCwd = (event: Record<string, unknown>, directory?: string, sessionHash?: string) => {
   const project = asRecord(event.project)
-  return pickString(event.cwd, event.directory, project?.root, directory)
+  const own = eventSessionDirectory(event)
+  if (sessionHash && own) sessionDirectories.set(sessionHash, own)
+  return pickString(
+    event.cwd,
+    event.directory,
+    own,
+    project?.root,
+    sessionHash ? sessionDirectories.get(sessionHash) : undefined,
+    directory,
+  )
 }
 
 const extractTypingSignals = (event: Record<string, unknown>) => {
@@ -4158,7 +4182,7 @@ export const Back2VibingPlugin: Plugin = async ({
       }
       const parentId = extractParentMarker(event) || undefined
       const parentSessionHash = extractParentSessionHash(event) || undefined
-      const cwd = extractCwd(event, directory)
+      const cwd = extractCwd(event, directory, sessionHash)
 
       const lifecycleSignal = getLifecycleSignal(eventType, event)
       const statusType = getSessionStatusType(event)
@@ -4199,6 +4223,7 @@ export const Back2VibingPlugin: Plugin = async ({
       // session rather than letting it grow for the server's lifetime.
       if (sessionHash && SESSION_END_EVENT_TYPES.has(eventType)) {
         sessionTitles.delete(sessionHash)
+        sessionDirectories.delete(sessionHash)
       }
 
       if (DEBUG_EVENTS) {
