@@ -3561,6 +3561,23 @@ const buildV2PermissionClient = (
   }
 }
 
+// Process-wide (globalThis) so every location instance and every hot-reloaded
+// copy of this module share it. Bounded; events without an id pass through.
+const SEEN_V2_EVENT_IDS = Symbol.for('b2v.opencode.seen-v2-event-ids')
+const SEEN_V2_EVENT_IDS_MAX = 2048
+const firstV2Sighting = (id: unknown): boolean => {
+  if (typeof id !== 'string' || !id) return true
+  const g = globalThis as { [SEEN_V2_EVENT_IDS]?: Set<string> }
+  const seen = (g[SEEN_V2_EVENT_IDS] ??= new Set<string>())
+  if (seen.has(id)) return false
+  seen.add(id)
+  if (seen.size > SEEN_V2_EVENT_IDS_MAX) {
+    const oldest = seen.values().next().value
+    if (oldest !== undefined) seen.delete(oldest)
+  }
+  return true
+}
+
 /**
  * V2 `setup` entry. Registration-only / embedded-v2-on-v1 hosts omit
  * `event.subscribe`; skip so the V1 `server()` / named-export path owns hooks
@@ -3575,6 +3592,7 @@ const setupBack2VibingV2 = async (ctx: OpencodeV2PluginContext) => {
   }
 
   const directory = resolveV2Directory(ctx)
+  const ownDirectory = typeof ctx.location?.directory === 'string' ? ctx.location.directory : ''
   const client = buildV2PermissionClient(ctx, directory)
   const hooks = await Back2VibingPlugin({ directory, client })
   const controller = new AbortController()
@@ -3584,6 +3602,22 @@ const setupBack2VibingV2 = async (ctx: OpencodeV2PluginContext) => {
       for await (const raw of ctx.event!.subscribe!({ signal: controller.signal })) {
         const event = asRecord(raw)
         if (!event) continue
+        // The service loads one instance per location but streams every
+        // location's events to each. A located event belongs to the instance
+        // loaded there (its directory and reply client). Every event then
+        // forwards once, by the event `id` every instance shares, so unlocated
+        // ones (session.execution.*) and a hot-reloaded copy of the instance
+        // for the same directory do not double-fire.
+        const eventDirectory = asRecord(event.location)?.directory
+        if (
+          typeof eventDirectory === 'string' &&
+          eventDirectory &&
+          ownDirectory &&
+          eventDirectory !== ownDirectory
+        ) {
+          continue
+        }
+        if (!firstV2Sighting(event.id)) continue
         for (const mapped of mapV2EventToV1(event)) {
           try {
             await hooks.event({ event: mapped })
