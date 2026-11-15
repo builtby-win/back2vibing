@@ -13,6 +13,8 @@ on:
 
 jobs:
   update-cask:
+    # The casks are the Tauri app's (tags v1.2.3). Native (native-v*) and Linux (linux-v*) releases have no such DMG.
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tap repository
