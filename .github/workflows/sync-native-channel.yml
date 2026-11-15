@@ -1,0 +1,72 @@
+name: Sync Native Channel
+
+# The pre-release checkbox on a native-v* release is the whole switch between alpha and stable.
+# Ticked: the build is an alpha, offered only to installs with "Alpha updates" on. Unticked: everyone gets it.
+# Installed apps read the Sparkle appcast (the appcast.xml asset on the native-appcast release), not that checkbox,
+# so this copies the checkbox into the appcast item's <sparkle:channel>.
+on:
+  release:
+    types: [edited, released, prereleased]
+
+permissions:
+  contents: write
+
+concurrency: native-appcast
+
+jobs:
+  sync:
+    if: startsWith(github.event.release.tag_name, 'native-v')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Match the appcast item to the pre-release checkbox
+        run: |
+          set -euo pipefail
+          # Read live, not from the event: with two quick edits the last run must write the final state.
+          prerelease="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
+          gh release download native-appcast --pattern appcast.xml
+          python3 - "${TAG#native-v}" "$prerelease" <<'PY'
+          import re, sys
+
+          version, alpha = sys.argv[1], sys.argv[2] == "true"
+          channel = "<sparkle:channel>alpha</sparkle:channel>"
+          before = open("appcast.xml").read()
+
+          def sync(match):
+              item = match.group(0)
+              if f"<sparkle:version>{version}</sparkle:version>" not in item:
+                  return item
+              item = re.sub(rf"[ \t]*{channel}\n", "", item)
+              if alpha:
+                  item = re.sub(r"([ \t]*)(<sparkle:version>)", rf"\1{channel}\n\1\2", item, count=1)
+              return item
+
+          after = re.sub(r"<item>.*?</item>", sync, before, flags=re.S)
+          # No item yet (the release script uploads it right after creating the release) or already in step: leave the feed alone.
+          if after != before:
+              open("appcast.xml", "w").write(after)
+              open("changed", "w").close()
+          PY
+          if [ -e changed ]; then
+            gh release upload native-appcast appcast.xml --clobber
+            echo "appcast: $TAG is now $([ "$prerelease" = true ] && echo alpha || echo stable)"
+          else
+            echo "appcast already matches $TAG (prerelease=$prerelease)"
+          fi
+
+      # The Tauri app's updater reads releases/latest. Unticking pre-release in the UI can tick "Set as the latest
+      # release" along with it, so hand "latest" back to the newest Tauri release if a native one took it.
+      - name: Keep "latest" on the Tauri release
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name)"
+          case "$latest" in
+            native-v*)
+              tauri="$(gh release list --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '[.[].tagName | select(test("^v[0-9]"))][0]')"
+              gh release edit "$tauri" --latest
+              echo "latest was $latest, restored to $tauri"
+              ;;
+          esac
